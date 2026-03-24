@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>昆蟲資料庫 - AI 工程師開發版</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Fix for lucide-react UMD expecting lowercase 'react' global -->
+  <script>window.react = window.React;</script>
+  <script src="https://unpkg.com/lucide-react@0.344.0/dist/umd/lucide-react.min.js"></script>
+  <!-- 昆蟲資料庫（v8 最終究極版，所有昆蟲皆配有專屬的獨立大圖供離線載入） -->
+  <script src="data/insects_v2.js?v=8" charset="UTF-8"></script>
+</head>
+
+<body class="bg-gray-100">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+    const insectDatabase = window.insectDatabase;
+
+    console.log("Script starting...");
+    const { Bug, Search, Thermometer, Droplets, Maximize, Wind, Sun, Utensils, CheckCircle2, Leaf, Info, BookOpen, X, ShoppingBag, Star, Zap } = LucideReact;
+    console.log("Icons destructured");
+
+    function App() {
+      console.log("App component rendering");
+      // 1. 表單介面用的狀態 (使用者操作時會變動)
+      const [criteria, setCriteria] = useState({
+        temp: 'all',
+        humidity: 'all',
+        space: 'all',
+        ventilation: 'all',
+        light: 'all',
+        dietType: 'all'
+      });
+
+      // 2. 真正用來分析的狀態 (按下按鈕後才會更新)
+      const [activeCriteria, setActiveCriteria] = useState({
+        temp: 'all',
+        humidity: 'all',
+        space: 'all',
+        ventilation: 'all',
+        light: 'all',
+        dietType: 'all'
+      });
+
+      // ✨ 新增：控制是否開啟即時更新
+      const [isAutoSearch, setIsAutoSearch] = useState(false);
+
+      const [hasSearched, setHasSearched] = useState(false);
+      const [selectedInsect, setSelectedInsect] = useState(null);
+
+      // ✨ 新增：目前選則的昆蟲類別 (預設顯示全部)
+      const [selectedCategory, setSelectedCategory] = useState('all');
+
+      // ✨ 修改：輸入變更處理
+      const handleInputChange = (e) => {
+        const { name, value } = e.target;
+
+        // 更新表單狀態
+        setCriteria(prev => {
+          const newCriteria = { ...prev, [name]: value };
+
+          // ✨ 關鍵邏輯：如果開啟了「即時更新」，同步更新 activeCriteria
+          if (isAutoSearch) {
+            setActiveCriteria(newCriteria);
+            setHasSearched(true);
+          }
+
+          return newCriteria;
+        });
+      };
+
+      // 3. 處理搜尋按鈕點擊 (手動模式用)
+      const handleSearch = () => {
+        setHasSearched(true);
+        setActiveCriteria({ ...criteria });
+      };
+
+      // ✨ 新增：切換即時模式
+      const toggleAutoSearch = () => {
+        const nextMode = !isAutoSearch;
+        setIsAutoSearch(nextMode);
+
+        // 如果切換成開啟，馬上執行一次搜尋，讓畫面同步
+        if (nextMode) {
+          setActiveCriteria({ ...criteria });
+          setHasSearched(true);
+        }
+      };
+
+      // 4. 篩選邏輯 (看 activeCriteria)
+      const matchedInsects = insectDatabase.filter(insect => {
+        const target = activeCriteria; // 使用生效的條件
+
+        const matchTemp = target.temp === 'all' || insect.match.temp.includes(target.temp);
+        const matchHumidity = target.humidity === 'all' || insect.match.humidity.includes(target.humidity);
+        const matchSpace = target.space === 'all' || insect.match.space.includes(target.space);
+        const matchVentilation = target.ventilation === 'all' || insect.match.ventilation.includes(target.ventilation);
+        const matchLight = target.light === 'all' || insect.match.light.includes(target.light);
+        const matchDiet = target.dietType === 'all' || insect.match.dietType.includes(target.dietType);
+        return matchTemp && matchHumidity && matchSpace && matchVentilation && matchLight && matchDiet;
+      });
+
+      // ✨ 新增：動態計算顯示結果中包含的類別
+      const availableCategories = ['all', ...new Set(matchedInsects.map(i => i.type))];
+
+      // 若目前的篩選結果改變，導致原本選中的類別消失，則自動切換回「全部」
+      React.useEffect(() => {
+        if (selectedCategory !== 'all' && !availableCategories.includes(selectedCategory)) {
+          setSelectedCategory('all');
+        }
+      }, [matchedInsects, selectedCategory]);
+
+      // 最終顯示的昆蟲列表 (同時依據使用者選擇的模型類別過濾)
+      const displayInsects = selectedCategory === 'all'
+        ? matchedInsects
+        : matchedInsects.filter(i => i.type === selectedCategory);
+
+
+      // ✨ 1. 智慧產生準備清單 (保持原本邏輯)
+      const getChecklist = (insect) => {
+        const list = [];
+        if (insect.ventilationLabel.includes("網箱") || insect.type === '螳螂' || insect.type === '竹節蟲') {
+          list.push({ item: "通風網箱 / 紗網飼養箱", desc: "這類昆蟲需要極高通風，且需要攀爬脫皮。" });
+        } else if (insect.match.space.includes('large')) {
+          list.push({ item: "大型飼養箱 (30cm以上)", desc: "體型較大或活動力強，空間不足易生病。" });
+        } else if (insect.match.space.includes('small')) {
+          list.push({ item: "小型飼養盒 / 寵物箱", desc: "空間不需太大，緊湊環境反而有安全感。" });
+        } else {
+          list.push({ item: "中型飼養箱 (約20-30cm)", desc: "標準尺寸，易於觀察與管理。" });
+        }
+
+        if (insect.type === '甲蟲' && insect.diet.includes("腐植土")) {
+          list.push({ item: "腐植土 / 發酵木屑", desc: "幼蟲食物兼成蟲底材，需保持微濕。" });
+        } else if (['蜘蛛', '蠍子', '等足目', '蜈蚣', '蜚蠊'].includes(insect.type)) {
+          list.push({ item: "椰土 / 泥炭土 (底材)", desc: "保濕性佳，適合挖掘築巢。" });
+        } else if (insect.type === '寄居蟹') {
+          list.push({ item: "珊瑚砂", desc: "需鋪設夠深(殼的2-3倍)供脫皮。" });
+        } else if (['螳螂', '竹節蟲'].includes(insect.type)) {
+          list.push({ item: "廚房紙巾 (鋪底)", desc: "方便每日清理大量糞便。" });
+          list.push({ item: "攀爬枯枝 / 樹皮", desc: "必備！供其倒掛脫皮與休息。" });
+        }
+
+        if (['甲蟲', '蜘蛛', '蠍子', '蜚蠊'].includes(insect.type) && !insect.ventilationLabel.includes("網箱")) {
+          list.push({ item: "躲避洞穴 / 樹皮塊", desc: "提供安全感，減少緊迫與暴衝。" });
+        }
+
+        if (insect.dietLabel.includes("果凍")) {
+          list.push({ item: "昆蟲果凍", desc: "專用高蛋白果凍，方便衛生。" });
+          list.push({ item: "果凍台 (防翻木)", desc: "防止果凍打翻弄髒環境。" });
+        }
+        if (insect.dietLabel.includes("活體")) {
+          list.push({ item: "活體餌料 (蟋蟀/果蠅/紅蟑)", desc: "需確認家中敢養這些飼料蟲。" });
+          list.push({ item: "長鑷子 (餵食夾)", desc: "避免徒手抓蟲被咬或驚嚇寵物。" });
+        }
+        if (insect.type === '竹節蟲' || insect.type === '直翅目' || insect.type === '鱗翅目') {
+          list.push({ item: "新鮮食草", desc: "需確認附近有穩定無農藥來源。" });
+          list.push({ item: "插枝水瓶", desc: "保持葉片新鮮，瓶口需塞棉花防溺水。" });
+        }
+        if (insect.type === '寄居蟹') {
+          list.push({ item: "海水盆 & 淡水盆", desc: "缺一不可，需使用粗鹽調製海水。" });
+          list.push({ item: "替換空殼", desc: "需準備不同大小供其更換。" });
+        }
+
+        list.push({ item: "噴霧罐", desc: "調節濕度與供水。" });
+        if (insect.tempLabel.includes("涼爽") || insect.tempLabel.includes("高溫")) {
+          list.push({ item: "溫濕度計", desc: "監控環境是否符合生存標準。" });
+        }
+        return list;
+      };
+
+      // ✨ 2. 智慧市場分析 (保持原本邏輯)
+      const getMarketInfo = (insect) => {
+        const rareList = ['亞馬遜巨人食鳥蛛', '魔花螳螂', '大王花金龜', '犀牛蟑螂', '亞克提恩大兜蟲', '海南巨人蜈蚣', '黃金鬼鍬形蟲'];
+        const seasonalList = ['台灣深山鍬形蟲', '台灣大蝗', '無尾鳳蝶 (幼蟲)'];
+        const commonList = ['獨角仙', '台灣扁鍬形蟲', '大麥町鼠婦', '馬達加斯加發聲蟑螂', '彩虹鍬形蟲', '白條綠花金龜', '墨西哥紅膝頭捕鳥蛛', '蘇利南潛蠊', '巴西白膝頭蜘蛛', '藍死路鐵甲蟲', '棉桿竹節蟲', '多米諾蟑螂', '魔法藥水鼠婦'];
+
+        if (rareList.includes(insect.name) || insect.difficulty === '專家') {
+          return {
+            level: "★☆☆☆☆ (稀有/高價)",
+            channel: "需向專業工作室預訂、高端甲蟲店",
+            desc: "通常實體店面不一定有現貨，建議加入專業 FB 社團尋找。"
+          };
+        } else if (seasonalList.includes(insect.name)) {
+          return {
+            level: "★★★☆☆ (季節性)",
+            channel: "夏季蟲季 (5-8月) 昆蟲店常見",
+            desc: "非產季時期可能買不到成蟲，只能買到幼蟲或需找繁殖者。"
+          };
+        } else if (commonList.includes(insect.name) || insect.name.includes("獨角仙")) {
+          return {
+            level: "★★★★★ (極易入手)",
+            channel: "全台甲蟲專賣店、大型連鎖寵物店",
+            desc: "非常普及，價格通常也很親民，隨時都能買到。"
+          };
+        } else {
+          return {
+            level: "★★★☆☆ (專賣店)",
+            channel: "各縣市甲蟲/爬蟲專賣店、網路工作室",
+            desc: "一般寵物店較少見，建議去專門的昆蟲店或網路上尋找。"
+          };
+        }
+      };
+
+      // ✨ 3. 價格估算邏輯 (保持原本邏輯)
+      const getPriceInfo = (insect) => {
+        // 針對特定物種的價格覆寫
+        const specialPrices = {
+          "大王花金龜": "幼蟲 $800+ / 成蟲 $2500~6000",
+          "犀牛蟑螂": "一對 $3000~5000 (生長緩慢)",
+          "小鴨等足蟲": "一隻 $300~500 (通常販售一組)",
+          "亞馬遜巨人食鳥蛛": "幼體 $1500 / 成體 $5000+",
+          "魔花螳螂": "幼體 $800 / 成體 $2000+",
+          "獨角仙 (雙叉犀金龜)": "幼蟲 $50 / 成蟲 $100~250",
+          "台灣扁鍬形蟲": "成蟲 $150~350 (依尺寸)",
+          "長戟大兜蟲": "幼蟲 $200 / 成蟲 $2000~5000+ (依尺寸血統)",
+          "南洋大兜蟲 (高加索)": "成蟲 $300~1000 (依尺寸)",
+          "小提琴螳螂": "幼體 $500 / 成體 $1500+",
+          "黃金鬼鍬形蟲": "成蟲 $1200~3000",
+          "蘇門答臘巨扁鍬形蟲": "成蟲 $500~3000+ (依尺寸)",
+          "翡翠蟑螂 (帶紋)": "一隻 $150~300",
+          "大田鱉 (水棲昆蟲)": "一隻 $400~800",
+          "魔法藥水鼠婦": "一隻 $30~50 (通常販售一組)",
+          "藍死路鐵甲蟲": "一隻 $250~450",
+          "無尾鳳蝶 (幼蟲)": "免費 (野外柑橘樹尋找)",
+        };
+
+        if (specialPrices[insect.name]) {
+          return specialPrices[insect.name];
+        }
+
+        // 通用規則
+        if (insect.type === '甲蟲') {
+          return "幼蟲 $80~150 / 成蟲 $250~800";
+        } else if (insect.type === '螳螂') {
+          return "幼體 $150~300 / 成體 $500~1000";
+        } else if (insect.type === '竹節蟲') {
+          return "幼體 $50~100 / 成體 $200~400";
+        } else if (insect.type === '蜘蛛' || insect.type === '蠍子') {
+          return "幼體 $300~600 / 成體 $1000~2000";
+        } else if (insect.type === '等足目' || insect.type === '蜚蠊') {
+          return "一隻 $30~100 (通常以組販售)";
+        } else {
+          return "約 $150 ~ $600";
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-emerald-50 text-slate-800 font-sans">
+          {/* Header */}
+          <header className="bg-emerald-700 text-white shadow-md sticky top-0 z-20">
+            <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Bug size={32} className="text-emerald-300" />
+                <div>
+                  <h1 className="text-2xl font-bold tracking-wide">昆蟲飼養推薦助手</h1>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-12 gap-8">
+
+            {/* 左側：篩選條件表單 */}
+            <div className="md:col-span-4 space-y-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-emerald-100 p-6 sticky top-24">
+                <h2 className="text-lg font-bold mb-4 flex items-center gap-2 border-b border-emerald-50 pb-3">
+                  <Search size={20} className="text-emerald-600" />
+                  設定您的飼養條件
+                </h2>
+
+                {/* 溫度 */}
+                <div className="mb-5">
+                  <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-1">
+                    <Thermometer size={16} className="text-orange-500" /> 溫度控制能力
+                  </label>
+                  <select name="temp" value={criteria.temp} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2.5">
+                    <option value="all">不限 / 皆可</option>
+                    <option value="cool">涼爽 / 具備冷氣溫控 (&lt;20°C)</option>
+                    <option value="room">一般室內常溫 (20-26°C)</option>
+                    <option value="warm">溫暖 / 夏季無冷氣 (&gt;26°C)</option>
+                  </select>
+                </div>
+
+                {/* 濕度 */}
+                <div className="mb-5">
+                  <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-1">
+                    <Droplets size={16} className="text-blue-500" /> 環境濕度提供
+                  </label>
+                  <select name="humidity" value={criteria.humidity} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2.5">
+                    <option value="all">不限 / 皆可</option>
+                    <option value="low">偏乾 / 不易發霉 (&lt;50%)</option>
+                    <option value="medium">適中 / 偶爾噴水保濕 (50-70%)</option>
+                    <option value="high">潮濕 / 需定時加濕保水 (&gt;70%)</option>
+                  </select>
+                </div>
+
+                {/* 空間 */}
+                <div className="mb-5">
+                  <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-1">
+                    <Maximize size={16} className="text-purple-500" /> 可用飼養空間
+                  </label>
+                  <select name="space" value={criteria.space} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2.5">
+                    <option value="all">不限 / 皆可</option>
+                    <option value="small">桌面小盒 (15cm 以下)</option>
+                    <option value="medium">中型飼養箱 (15-30cm)</option>
+                    <option value="large">大型網箱/造景缸 (30cm 以上)</option>
+                  </select>
+                </div>
+
+                {/* 通風 */}
+                <div className="mb-5">
+                  <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-1">
+                    <Wind size={16} className="text-teal-500" /> 環境通風程度
+                  </label>
+                  <select name="ventilation" value={criteria.ventilation} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2.5">
+                    <option value="all">不限 / 皆可</option>
+                    <option value="low">一般打孔盒 (保濕優先，適合底棲)</option>
+                    <option value="high">網箱/大面積通風 (空氣流通優先)</option>
+                  </select>
+                </div>
+
+                {/* 光照 */}
+                <div className="mb-5">
+                  <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-1">
+                    <Sun size={16} className="text-yellow-500" /> 日照與光線
+                  </label>
+                  <select name="light" value={criteria.light} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2.5">
+                    <option value="all">不限 / 皆可</option>
+                    <option value="dark">陰暗角落 (幾乎無自然光)</option>
+                    <option value="indoor">一般室內散光 (無陽光直射)</option>
+                  </select>
+                </div>
+
+                {/* 餌料接受度 */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-1">
+                    <Utensils size={16} className="text-red-500" /> 餌料準備意願 (重要)
+                  </label>
+                  <select name="dietType" value={criteria.dietType} onChange={handleInputChange} className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2.5">
+                    <option value="all">不限 / 皆可</option>
+                    <option value="easy">方便現成 (果凍、狗糧、魚飼料)</option>
+                    <option value="soil">專屬底材 (需買腐植土或發酵木屑)</option>
+                    <option value="plant">採集植物 (能定期摘新鮮無毒葉片)</option>
+                    <option value="live">活體餌料 (敢餵食蟑螂、蟋蟀等活餌)</option>
+                  </select>
+                </div>
+
+                {/* ✨ 新增：即時更新開關與按鈕區塊 */}
+                <div className="space-y-3">
+                  <div
+                    onClick={toggleAutoSearch}
+                    className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50 transition-colors select-none"
+                  >
+                    <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-300 ease-in-out ${isAutoSearch ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                      <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ease-in-out ${isAutoSearch ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                    </div>
+                    <span className={`text-sm font-medium ${isAutoSearch ? 'text-emerald-700' : 'text-slate-500'}`}>
+                      {isAutoSearch ? '⚡ 已開啟即時篩選' : '手動確認後篩選'}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={handleSearch}
+                    disabled={isAutoSearch} // 即時模式下禁用按鈕，避免混淆
+                    className={`w-full font-medium py-3 px-4 rounded-xl transition-all shadow-sm flex justify-center items-center gap-2
+                  ${isAutoSearch
+                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-70'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      }`}
+                  >
+                    {isAutoSearch ? (
+                      <>
+                        <Zap size={18} />
+                        結果已即時更新
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={18} />
+                        {hasSearched ? "更新篩選條件" : "開始分析推薦"}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 右側：推薦結果展示 (使用 activeCriteria 篩選後的結果) */}
+            <div className="md:col-span-8">
+              {!hasSearched ? (
+                <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center p-8 bg-white/50 border border-emerald-100/50 rounded-2xl border-dashed">
+                  <Leaf size={64} className="text-emerald-200 mb-4" />
+                  <h3 className="text-xl font-bold text-slate-600 mb-2">準備好迎接您的新寵物了嗎？</h3>
+                  <p className="text-slate-500 max-w-md">
+                    請在左側設定您能提供的飼養環境條件，點擊「開始分析推薦」，我們將為您配對最適合您的昆蟲夥伴。
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <div className="mb-6 flex justify-between items-end">
+                    <div>
+                      <h2 className="text-2xl font-bold text-emerald-800">推薦結果</h2>
+                      <p className="text-slate-600 mt-1">為您找到 {matchedInsects.length} 種適合的昆蟲</p>
+                    </div>
+                  </div>
+
+                  {/* ✨ 新增：動態類別篩選器 */}
+                  {matchedInsects.length > 0 && availableCategories.length > 2 && (
+                    <div className="mb-6 flex flex-wrap gap-2">
+                      {availableCategories.map(cat => (
+                        <button
+                          key={cat}
+                          onClick={() => setSelectedCategory(cat)}
+                          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all shadow-sm ${selectedCategory === cat
+                            ? 'bg-emerald-600 text-white border-transparent'
+                            : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'
+                            }`}
+                        >
+                          {cat === 'all' ? '全部顯示' : cat}
+                          {cat !== 'all' && (
+                            <span className="ml-1.5 text-xs opacity-75">
+                              ({matchedInsects.filter(i => i.type === cat).length})
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {matchedInsects.length === 0 ? (
+                    <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-red-100">
+                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-50 mb-4">
+                        <Info size={32} className="text-red-400" />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-700 mb-2">沒有找到完全符合的物種</h3>
+                      <p className="text-slate-500">
+                        您設定的條件可能比較嚴苛，建議您將部分條件設為「不限」再次嘗試！
+                      </p>
+                    </div>
+                  ) : displayInsects.length === 0 ? (
+                    <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-emerald-100">
+                      <h3 className="text-lg font-bold text-slate-700 mb-2">該類別沒有結果</h3>
+                      <p className="text-slate-500">
+                        請嘗試切換到「全部顯示」或其他類別。
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {displayInsects.map((insect) => (
+                        <div key={insect.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-slate-100 flex flex-col">
+
+                          {/* 圖片區塊 (Top) */}
+                          <div className="relative overflow-hidden bg-slate-100 h-48 border-b border-slate-50 shrink-0">
+                            {insect.image && insect.image !== '' ? (
+                              <img src={insect.image} alt={insect.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center relative">
+                                <Bug size={80} className="text-emerald-200 opacity-50 absolute" />
+                              </div>
+                            )}
+                            <span className="absolute top-4 left-4 inline-block px-2.5 py-1 bg-emerald-700/80 text-white backdrop-blur-sm text-xs font-semibold rounded-full shadow-sm z-10">
+                              {insect.type}
+                            </span>
+                          </div>
+
+                          {/* 內容區塊 (Bottom) */}
+                          <div className="p-5 flex-grow flex flex-col relative z-10">
+                            <div className="flex justify-between items-start mb-4">
+                              <div>
+                                <h3 className="text-xl font-bold text-slate-800">{insect.name}</h3>
+                                {insect.nickname && insect.nickname !== insect.type && (
+                                  <p className="text-emerald-700 font-medium text-sm mt-0.5">「{insect.nickname}」</p>
+                                )}
+                                <p className="text-xs italic text-slate-400 mt-1">{insect.scientificName}</p>
+                              </div>
+                              <span className={`text-xs font-bold px-2 py-1 rounded border shadow-sm flex-shrink-0 ml-2 ${insect.difficulty === '新手' ? 'bg-green-50 text-green-700 border-green-200' : insect.difficulty === '進階' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                {insect.difficulty}
+                              </span>
+                            </div>
+
+                            <p className="text-slate-600 text-sm mb-4 leading-relaxed line-clamp-3">
+                              {insect.description}
+                            </p>
+
+                            <div className="space-y-2 mb-4 mt-auto">
+                              <div className="flex items-center text-sm text-slate-600">
+                                <Thermometer size={16} className="text-slate-400 mr-2 min-w-4" />
+                                <span className="font-medium mr-2">溫度:</span> {insect.tempLabel}
+                              </div>
+                              <div className="flex items-center text-sm text-slate-600">
+                                <Maximize size={16} className="text-slate-400 mr-2 min-w-4" />
+                                <span className="font-medium mr-2">空間:</span> {insect.spaceLabel}
+                              </div>
+                              <div className="flex items-center text-sm text-slate-600">
+                                <Utensils size={16} className="text-slate-400 mr-2 min-w-4" />
+                                <span className="font-medium mr-2">餌料:</span> {insect.dietLabel}
+                              </div>
+                            </div>
+
+                            <div className="bg-amber-50 rounded-lg p-3 text-sm mb-4">
+                              <span className="font-bold text-amber-800 block mb-1">主要食物：</span>
+                              <span className="text-amber-700">{insect.diet}</span>
+                            </div>
+
+                            <button
+                              onClick={() => setSelectedInsect(insect)}
+                              className="w-full py-2 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm border border-emerald-200"
+                            >
+                              <BookOpen size={16} />
+                              查看飼養指南與市場資訊
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </main >
+
+          {/* 飼養指南彈跳視窗 (保持原本邏輯) */}
+          {
+            selectedInsect && (
+              <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setSelectedInsect(null)}>
+                <div
+                  className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl relative animate-in fade-in zoom-in duration-200"
+                  onClick={e => e.stopPropagation()}
+                >
+                  {/* Modal Header */}
+                  <div className="bg-emerald-600 p-6 text-white sticky top-0 z-10 flex justify-between items-start">
+                    <div>
+                      <h3 className="text-2xl font-bold">{selectedInsect.name}</h3>
+                      <p className="text-emerald-100 opacity-90">{selectedInsect.scientificName}</p>
+                    </div>
+                    <button
+                      onClick={() => setSelectedInsect(null)}
+                      className="p-1 hover:bg-emerald-500 rounded-full transition-colors"
+                    >
+                      <X size={24} />
+                    </button>
+                  </div>
+
+                  {/* Modal Content */}
+                  <div className="p-6 space-y-8">
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* 1. 市場資訊區塊 (左側) */}
+                      <section className="bg-blue-50 border border-blue-100 rounded-xl p-5 h-full">
+                        <h4 className="flex items-center gap-2 text-lg font-bold text-blue-800 mb-4 pb-2 border-b border-blue-200">
+                          <ShoppingBag size={20} />
+                          市場入手情報
+                        </h4>
+                        <div className="space-y-4">
+                          <div>
+                            <span className="text-xs font-bold text-blue-500 uppercase tracking-wider block mb-1">💰 參考市價</span>
+                            <div className="font-bold text-slate-800 bg-white px-3 py-2 rounded-lg border border-blue-100 inline-block shadow-sm">
+                              {getPriceInfo(selectedInsect)}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-blue-500 uppercase tracking-wider block mb-1">入手難易度</span>
+                            <div className="font-medium text-slate-700">{getMarketInfo(selectedInsect).level}</div>
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-blue-500 uppercase tracking-wider block mb-1">推薦購買管道</span>
+                            <div className="text-sm text-slate-600 leading-relaxed">{getMarketInfo(selectedInsect).channel}</div>
+                          </div>
+                          <div className="text-xs text-blue-400 bg-blue-100/50 p-2 rounded">
+                            💡 {getMarketInfo(selectedInsect).desc}
+                          </div>
+                        </div>
+                      </section>
+
+                      {/* 2. 準備清單區塊 (右側) */}
+                      <section className="bg-orange-50 border border-orange-100 rounded-xl p-5 h-full">
+                        <h4 className="flex items-center gap-2 text-lg font-bold text-orange-800 mb-4 pb-2 border-b border-orange-200">
+                          <CheckCircle2 size={20} />
+                          飼養前準備清單
+                        </h4>
+                        <div className="space-y-2">
+                          {getChecklist(selectedInsect).map((item, index) => (
+                            <div key={index} className="flex items-start gap-2 text-sm">
+                              <div className="mt-1 min-w-[12px] w-3 h-3 rounded-sm border border-orange-400"></div>
+                              <div>
+                                <span className="font-bold text-slate-700 mr-1">{item.item}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    </div>
+
+                    {/* 3. 詳細飼養指南 (下方) */}
+                    {!selectedInsect.guide ? (
+                      <div className="text-center text-slate-400 py-8">
+                        <p>抱歉，此物種的詳細飼養教學正在撰寫中...</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-6 pt-4 border-t border-slate-100">
+                        <section>
+                          <h4 className="flex items-center gap-2 text-lg font-bold text-emerald-800 mb-3 border-b border-emerald-100 pb-2">
+                            <Maximize size={20} className="text-emerald-600" />
+                            環境佈置 (Setup)
+                          </h4>
+                          <p className="text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            {selectedInsect.guide.setup}
+                          </p>
+                        </section>
+
+                        <section>
+                          <h4 className="flex items-center gap-2 text-lg font-bold text-emerald-800 mb-3 border-b border-emerald-100 pb-2">
+                            <Leaf size={20} className="text-emerald-600" />
+                            日常照顧 (Daily Care)
+                          </h4>
+                          <p className="text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            {selectedInsect.guide.care}
+                          </p>
+                        </section>
+
+                        <section>
+                          <h4 className="flex items-center gap-2 text-lg font-bold text-emerald-800 mb-3 border-b border-emerald-100 pb-2">
+                            <Star size={20} className="text-emerald-600" />
+                            繁殖與備註 (Breeding & Tips)
+                          </h4>
+                          <p className="text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            {selectedInsect.guide.breeding}
+                          </p>
+                        </section>
+                      </div>
+                    )}
+
+                    <div className="pt-4 flex justify-end">
+                      <button
+                        onClick={() => setSelectedInsect(null)}
+                        className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors"
+                      >
+                        關閉指南
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          }
+        </div >
+      );
+    }
+
+    console.log("Root element check:", document.getElementById('root'));
+    try {
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+      console.log("Render call executed");
+    } catch (e) {
+      console.error("Render failed:", e);
+    }
+  </script>
